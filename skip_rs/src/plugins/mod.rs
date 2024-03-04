@@ -1,7 +1,14 @@
+use std::ffi::c_void;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Mutex;
 
+use frida_gum::interceptor::ProbeListener;
+use frida_gum::NativePointer;
 use once_cell::sync::Lazy;
+use rust_hooking_utils::patching::process::GameProcess;
+
+use crate::utils::NullLock;
 
 mod generic;
 mod lop;
@@ -10,24 +17,6 @@ mod sekiro;
 pub static GUM: Lazy<frida_gum::Gum> = Lazy::new(|| unsafe { frida_gum::Gum::obtain() });
 pub static PROBE_INTERCEPTOR: Lazy<Mutex<NullLock<frida_gum::interceptor::Interceptor>>> =
     Lazy::new(|| Mutex::new(NullLock(frida_gum::interceptor::Interceptor::obtain(&GUM))));
-
-pub struct NullLock<T>(T);
-
-impl<T> std::ops::Deref for NullLock<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl<T> std::ops::DerefMut for NullLock<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-unsafe impl<T> Sync for NullLock<T> {}
-unsafe impl<T> Send for NullLock<T> {}
 
 /// Get all plugins which could apply.
 pub fn get_all_plugins(search_path: &Path) -> Vec<Box<dyn SkipPlugin>> {
@@ -99,4 +88,34 @@ pub struct PluginIdentifiers {
     pub plugin_name: String,
     pub expected_module: Option<String>,
     pub expected_exe_name: Option<String>,
+}
+
+/// Find the given signature in the current process' base module, and subsequently attach the [PROBE_INTERCEPTOR]
+/// with the given `listener`.
+///
+/// The pinned `listener` is returned, and must be saved for the remaining lifetime of the program.
+///
+/// The [Unpin] bound is unfortunately necessary due to the fact that we can't pass the [Pin] directly...
+pub fn attach_listener_to_signature<T: ProbeListener + Unpin>(
+    signature: &str,
+    listener: T,
+) -> eyre::Result<Pin<Box<T>>> {
+    let position_fn_ptr = GameProcess::current_process()
+        .get_base_module()?
+        .to_local()?
+        .scan_for_pattern(signature)
+        .map_err(|e| eyre::eyre!(Box::new(e)))? as usize;
+
+    log::info!("Found position modification ptr: {:#X}", position_fn_ptr);
+
+    // Undocumented in `attach_instruction`, but this *needs* to be pinned as they save the pointer we pass
+    let mut listener = Box::pin(listener);
+    PROBE_INTERCEPTOR
+        .lock()
+        .unwrap()
+        .attach_instruction(NativePointer(position_fn_ptr as *mut c_void), &mut *listener);
+
+    log::info!("Initiated interceptor at {position_fn_ptr:#X}");
+
+    Ok(listener)
 }

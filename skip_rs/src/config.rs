@@ -67,6 +67,6 @@ pub fn create_initial_config(directory: impl AsRef<Path>) -> eyre::Result<()> {
     Ok(())
 }
 
-pub fn validate_config(conf: &SkipConfig) -> eyre::Result<()> {
+pub fn validate_config(_conf: &SkipConfig) -> eyre::Result<()> {
     Ok(())
 }

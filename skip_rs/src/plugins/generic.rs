@@ -1,14 +1,11 @@
-use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use frida_gum::interceptor::{InvocationContext, ProbeListener};
-use frida_gum::NativePointer;
-use rust_hooking_utils::patching::process::GameProcess;
 
 use crate::plugins::{PlayerCoordinates, PluginIdentifiers, SkipPlugin};
-use crate::plugins::generic::config::{GenericConfig, GenericPositionConfig, InterceptConfig, Register};
+use crate::plugins::generic::config::{Comparison, GenericConfig, GenericPositionConfig, InterceptConfig};
 
 pub static SKIP_PLUGIN_FILENAME: &str = "skip_runback_plugin.json";
 
@@ -53,28 +50,15 @@ impl ConfigBasedPlugin {
     }
 
     fn start_intercept(&mut self, intercept: config::InterceptConfig) -> eyre::Result<()> {
-        let position_fn_ptr = GameProcess::current_process()
-            .get_base_module()?
-            .to_local()?
-            .scan_for_pattern(&intercept.intercept_signature)
-            .map_err(|e| eyre::eyre!(Box::new(e)))? as usize;
-
-        log::info!("Found position modification ptr: {:#X}", position_fn_ptr);
-
-        // Undocumented in `attach_instruction`, but this *needs* to be pinned as they save the pointer we pass
-        let mut listener = Box::pin(GenericCoordinateIntercept {
+        let listener = GenericCoordinateIntercept {
             position_ptr: self.position_ptr.clone(),
             config: intercept.clone(),
-        });
+        };
 
-        super::PROBE_INTERCEPTOR
-            .lock()
-            .unwrap()
-            .attach_instruction(NativePointer(position_fn_ptr as *mut c_void), &mut *listener);
-
-        self.listener = Some(listener);
-
-        log::info!("Initiated interceptor at {position_fn_ptr:#X}");
+        self.listener = Some(super::attach_listener_to_signature(
+            &intercept.intercept_signature,
+            listener,
+        )?);
 
         Ok(())
     }
@@ -176,29 +160,26 @@ pub struct GenericCoordinateIntercept {
 impl ProbeListener for GenericCoordinateIntercept {
     fn on_hit(&mut self, context: InvocationContext) {
         let ctx = context.cpu_context();
-        let base_ptr = match self.config.register {
-            Register::Rax => ctx.rax(),
-            Register::Rbx => ctx.rbx(),
-            Register::Rcx => ctx.rcx(),
-            Register::Rdx => ctx.rdx(),
-            Register::Rsi => ctx.rsi(),
-            Register::Rdi => ctx.rdi(),
-            Register::Rbp => ctx.rbp(),
-            Register::Rsp => ctx.rsp(),
-            Register::R8 => ctx.r8(),
-            Register::R9 => ctx.r9(),
-            Register::R10 => ctx.r10(),
-            Register::R11 => ctx.r11(),
-            Register::R12 => ctx.r12(),
-            Register::R13 => ctx.r13(),
-            Register::R14 => ctx.r14(),
-            Register::R15 => ctx.r15(),
-            Register::Rip => ctx.rip(),
-        } as usize;
+
+        if let Some(filter) = &self.config.filter {
+            let value = filter.compare.to_value(&ctx) as usize;
+            let should_proceed = match filter.comparison {
+                Comparison::Equal => value == filter.compare_to,
+                Comparison::NEqual => value != filter.compare_to,
+                Comparison::Gt => value > filter.compare_to,
+                Comparison::Lt => value < filter.compare_to,
+            };
+
+            if !should_proceed {
+                return;
+            }
+        }
+
+        let base_ptr = self.config.register.to_value(&ctx) as usize;
 
         let mut lock = self.position_ptr.lock().unwrap();
 
-        if lock.as_ref().map(|v| *v != base_ptr).unwrap_or(true) {
+        if lock.map(|ptr| ptr != base_ptr).unwrap_or(true) {
             let old = lock.map(|ptr| ptr).unwrap_or_default();
             *lock = Some(base_ptr);
             log::trace!("Updated player pointer from `{old:#X}` to {:#X}", base_ptr);
@@ -332,6 +313,30 @@ mod config {
         R14,
         R15,
         Rip,
+    }
+
+    impl Register {
+        pub fn to_value(&self, ctx: &frida_gum::CpuContext) -> u64 {
+            match self {
+                Register::Rax => ctx.rax(),
+                Register::Rbx => ctx.rbx(),
+                Register::Rcx => ctx.rcx(),
+                Register::Rdx => ctx.rdx(),
+                Register::Rsi => ctx.rsi(),
+                Register::Rdi => ctx.rdi(),
+                Register::Rbp => ctx.rbp(),
+                Register::Rsp => ctx.rsp(),
+                Register::R8 => ctx.r8(),
+                Register::R9 => ctx.r9(),
+                Register::R10 => ctx.r10(),
+                Register::R11 => ctx.r11(),
+                Register::R12 => ctx.r12(),
+                Register::R13 => ctx.r13(),
+                Register::R14 => ctx.r14(),
+                Register::R15 => ctx.r15(),
+                Register::Rip => ctx.rip(),
+            }
+        }
     }
 
     #[derive(Debug, serde::Serialize, serde::Deserialize, Clone, PartialEq, PartialOrd)]

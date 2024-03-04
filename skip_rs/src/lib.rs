@@ -52,7 +52,7 @@ pub fn dll_attach(hinst_dll: windows::Win32::Foundation::HMODULE) -> Result<()> 
     log::info!("Found main window: {:?} ({:?})", main_window.title(), main_window.0);
 
     let mut key_manager = KeyboardManager::new();
-    let mut update_duration = Duration::from_secs_f64(1.0 / 60.);
+    let update_duration = Duration::from_secs_f64(1.0 / 60.);
 
     let plugins = plugins::get_all_plugins(save_config_directory);
 
@@ -75,11 +75,9 @@ pub fn dll_attach(hinst_dll: windows::Win32::Foundation::HMODULE) -> Result<()> 
             }
         }
 
-        unsafe {
-            // Only run if we're in the foreground. A bit hacky, but eh...
-            if main_window.is_foreground_window() {
-                app.run(&conf, &mut key_manager)?;
-            }
+        // Only run if we're in the foreground. A bit hacky, but eh...
+        if main_window.is_foreground_window() {
+            app.run(&conf, &mut key_manager)?;
         }
 
         std::thread::sleep(update_duration);

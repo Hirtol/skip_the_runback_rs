@@ -1,12 +1,9 @@
 //! Lies of P specific module for demonstration's sake
 
-use std::ffi::c_void;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use frida_gum::interceptor::{InvocationContext, ProbeListener};
-use frida_gum::NativePointer;
-use rust_hooking_utils::patching::process::GameProcess;
 
 use crate::plugins::{PluginIdentifiers, SkipPlugin};
 
@@ -16,13 +13,15 @@ pub static READ_FROM_COORDS_SIG: &str = "41 0F 10 89 C0 01 00 00 48 8D 44 24 28"
 type CoordinatePtr = Arc<Mutex<Option<usize>>>;
 
 pub struct LOPPlugin {
-    coords: CoordinatePtr,
+    position_ptr: CoordinatePtr,
+    listener: Option<Pin<Box<LopCoordinatesIntercept>>>,
 }
 
 impl LOPPlugin {
     pub fn new() -> Self {
         Self {
-            coords: Default::default(),
+            position_ptr: Default::default(),
+            listener: None,
         }
     }
 }
@@ -37,25 +36,15 @@ impl SkipPlugin for LOPPlugin {
     }
 
     fn start(&mut self) -> eyre::Result<()> {
-        let camera_fn_call_ptr = GameProcess::current_process()
-            .get_base_module()?
-            .to_local()?
-            .scan_for_pattern(READ_FROM_COORDS_SIG)
-            .map_err(|e| eyre::eyre!(Box::new(e)))? as usize;
+        let listener = LopCoordinatesIntercept(self.position_ptr.clone());
 
-        log::info!("Found LOP position call ptr: {:#X}", camera_fn_call_ptr);
-
-        // Awful, but need to lend out `intercept` as `mut` permanently 🙃
-        let intercp = crate::utils::leak(frida_gum::interceptor::Interceptor::obtain(&super::GUM));
-        let intercept = crate::utils::leak(LopCoordinatesIntercept(self.coords.clone()));
-
-        intercp.attach_instruction(NativePointer(camera_fn_call_ptr as *mut c_void), intercept);
+        self.listener = Some(super::attach_listener_to_signature(READ_FROM_COORDS_SIG, listener)?);
 
         Ok(())
     }
 
     fn get_current_coordinates(&mut self) -> eyre::Result<Option<crate::plugins::PlayerCoordinates>> {
-        let coords = self.coords.lock().unwrap();
+        let coords = self.position_ptr.lock().unwrap();
         let out = unsafe {
             coords
                 .map(|ptr| *(ptr as *mut PlayerCoordinates))
@@ -70,7 +59,7 @@ impl SkipPlugin for LOPPlugin {
     }
 
     fn set_current_coordinates(&mut self, target: crate::plugins::PlayerCoordinates) -> eyre::Result<()> {
-        if let Some(coords) = self.coords.lock().unwrap().clone() {
+        if let Some(coords) = self.position_ptr.lock().unwrap().clone() {
             let coords = coords as *mut PlayerCoordinates;
             unsafe {
                 (*coords).x = target.x;
@@ -106,7 +95,7 @@ impl ProbeListener for LopCoordinatesIntercept {
         if lock.as_ref().map(|v| *v != coords).unwrap_or(true) {
             let old = lock.map(|ptr| ptr).unwrap_or_default();
             *lock = Some(coords);
-            log::trace!("Updated LOP player pointer from `{old:#X}` to {:#X}", coords);
+            log::trace!("Updated LoP player position pointer from `{old:#X}` to {:#X}", coords);
         }
     }
 }
