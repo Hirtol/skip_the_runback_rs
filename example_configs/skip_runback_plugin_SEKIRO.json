@@ -1,0 +1,19 @@
+{
+  "identifiers": {
+    "plugin_name": "Generic Skip Sekiro Example",
+    "expected_module": "sekiro.exe",
+    "expected_exe_name": "sekiro.exe"
+  },
+  "position": {
+    "InterceptPtr": {
+      "intercept_signature": "0F 28 81 80 00 00 00 4D",
+      "register": "Rcx",
+      "filter": null
+    }
+  },
+  "pointer_offsets": {
+    "x": 128,
+    "y": 132,
+    "z": 136
+  }
+}

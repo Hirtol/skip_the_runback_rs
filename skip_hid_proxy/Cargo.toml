@@ -1,0 +1,16 @@
+[package]
+name = "skip_hid_proxy"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hid"
+crate-type = ['cdylib']
+
+[dependencies]
+rust_hooking_utils.workspace = true
+skip_rs = { path = "../skip_rs" }
+windows.workspace = true
+
+[build-dependencies]
+forward-dll.workspace = true
