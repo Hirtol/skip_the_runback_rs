@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use frida_gum::interceptor::{InvocationContext, ProbeListener};
 
-use crate::plugins::{PluginIdentifiers, SkipPlugin};
+use crate::plugins::{CPlayerCoordinates, PluginIdentifiers, SkipPlugin};
 
 /// Signature of the instruction which exclusively reads from the player coordinates struct.
 pub static READ_FROM_COORDS_SIG: &str = "0F 28 81 80 00 00 00 4D";
@@ -46,7 +46,7 @@ impl SkipPlugin for SekiroPlugin {
         let coords = self.coords.lock().unwrap();
         let out = unsafe {
             coords
-                .map(|ptr| *(ptr as *mut PlayerCoordinates))
+                .map(|ptr| *(ptr as *mut CPlayerCoordinates))
                 .map(|coords| super::PlayerCoordinates {
                     x: coords.x,
                     y: coords.y,
@@ -59,7 +59,7 @@ impl SkipPlugin for SekiroPlugin {
 
     fn set_current_coordinates(&mut self, target: crate::plugins::PlayerCoordinates) -> eyre::Result<()> {
         if let Some(coords) = *self.coords.lock().unwrap() {
-            let coords = coords as *mut PlayerCoordinates;
+            let coords = coords as *mut CPlayerCoordinates;
             unsafe {
                 (*coords).x = target.x;
                 (*coords).y = target.y;
@@ -74,14 +74,6 @@ impl SkipPlugin for SekiroPlugin {
 }
 
 pub struct SekiroCoordinatesIntercept(CoordinatePtr);
-
-#[derive(Debug, Clone, Copy, Default)]
-#[repr(C)]
-pub struct PlayerCoordinates {
-    x: f32,
-    y: f32,
-    z: f32,
-}
 
 impl ProbeListener for SekiroCoordinatesIntercept {
     fn on_hit(&mut self, context: InvocationContext) {

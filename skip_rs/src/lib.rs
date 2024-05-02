@@ -19,7 +19,7 @@ mod waypoints;
 
 mod utils;
 
-mod plugins;
+pub mod plugins;
 
 static SHUTDOWN_FLAG: AtomicBool = AtomicBool::new(false);
 

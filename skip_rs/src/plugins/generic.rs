@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use frida_gum::interceptor::{InvocationContext, ProbeListener};
 
-use crate::plugins::{PlayerCoordinates, PluginIdentifiers, SkipPlugin};
-use crate::plugins::generic::config::{Comparison, GenericConfig, GenericPositionConfig, InterceptConfig};
+pub use crate::plugins::{PlayerCoordinates, PluginIdentifiers, SkipPlugin};
+pub use crate::plugins::generic::config::*;
 
 pub static SKIP_PLUGIN_FILENAME: &str = "skip_runback_plugin.json";
 
@@ -14,7 +14,7 @@ type CoordinatePtr = Arc<Mutex<Option<usize>>>;
 pub struct ConfigBasedPlugin {
     position_ptr: CoordinatePtr,
     listener: Option<Pin<Box<GenericCoordinateIntercept>>>,
-    config_path: PathBuf,
+    config_path: Option<PathBuf>,
     config: GenericConfig,
 }
 
@@ -39,8 +39,17 @@ impl ConfigBasedPlugin {
             config: conf,
             position_ptr: ptr,
             listener: None,
-            config_path: file,
+            config_path: Some(file),
         })
+    }
+
+    pub fn from_config(config: GenericConfig) -> ConfigBasedPlugin {
+        Self {
+            position_ptr: CoordinatePtr::default(),
+            listener: None,
+            config_path: None,
+            config,
+        }
     }
 
     fn load_config(cfg_path: &Path) -> eyre::Result<GenericConfig> {
@@ -120,7 +129,10 @@ impl super::SkipPlugin for ConfigBasedPlugin {
     }
 
     fn reload_config(&mut self) -> eyre::Result<()> {
-        match Self::load_config(&self.config_path) {
+        let Some(path) = self.config_path.as_ref() else {
+            return Ok(());
+        };
+        match Self::load_config(path) {
             Ok(cfg) => {
                 if self.config == cfg {
                     return Ok(());

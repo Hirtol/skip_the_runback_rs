@@ -12,7 +12,9 @@ use crate::utils::NullLock;
 
 mod generic;
 mod lop;
+mod macros;
 mod sekiro;
+mod wolong;
 
 pub static GUM: Lazy<frida_gum::Gum> = Lazy::new(|| unsafe { frida_gum::Gum::obtain() });
 pub static PROBE_INTERCEPTOR: Lazy<Mutex<NullLock<frida_gum::interceptor::Interceptor>>> =
@@ -24,6 +26,7 @@ pub fn get_all_plugins(search_path: &Path) -> Vec<Box<dyn SkipPlugin>> {
 
     generic_skips.push(Box::new(lop::LOPPlugin::new()));
     generic_skips.push(Box::new(sekiro::SekiroPlugin::new()));
+    generic_skips.push(Box::new(wolong::WoLongPlugin::new()));
 
     generic_skips
 }
@@ -81,6 +84,14 @@ pub struct PlayerCoordinates {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(C)]
+pub struct CPlayerCoordinates {
+    x: f32,
+    z: f32,
+    y: f32,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, PartialOrd)]
