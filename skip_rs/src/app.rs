@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use rust_hooking_utils::raw_input::key_manager::KeyboardManager;
 
@@ -58,11 +59,17 @@ impl SkipApp {
 
     fn teleport_to_waypoint(&mut self) -> eyre::Result<()> {
         if let Some(coords) = self.waypoints.most_recent.as_ref() {
-            if let Err(e) = self.current_plugin.set_current_coordinates(*coords) {
-                log::info!("Failed to teleport, maybe the player pointer wasn't initialized yet? {e:?}");
-            } else {
-                log::info!("Teleported player to: {coords:#?}");
+            let now = Instant::now();
+            // Execute the write several million times to try get around potential race conditions, where the game itself
+            // overwrites our teleport location instantly (Wo Long).
+            while now.elapsed() < Duration::from_millis(16) {
+                if let Err(e) = self.current_plugin.set_current_coordinates(*coords) {
+                    log::info!("Failed to teleport, maybe the player pointer wasn't initialized yet? {e:?}");
+                    return Ok(());
+                }
             }
+
+            log::info!("Teleported player to: {coords:#?}");
         } else {
             log::info!("No waypoint exists as of yet, not teleporting")
         }
