@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use frida_gum::interceptor::{InvocationContext, ProbeListener};
 
-pub use crate::plugins::{PlayerCoordinates, PluginIdentifiers, SkipPlugin};
 pub use crate::plugins::generic::config::*;
+pub use crate::plugins::{PlayerCoordinates, PluginIdentifiers, SkipPlugin};
 
 pub static SKIP_PLUGIN_FILENAME: &str = "skip_runback_plugin.json";
 
@@ -66,6 +66,7 @@ impl ConfigBasedPlugin {
 
         self.listener = Some(super::attach_listener_to_signature(
             &intercept.intercept_signature,
+            self.config.identifiers.expected_module.as_deref(),
             listener,
         )?);
 

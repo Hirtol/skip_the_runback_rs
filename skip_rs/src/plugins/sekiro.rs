@@ -37,7 +37,11 @@ impl SkipPlugin for SekiroPlugin {
 
     fn start(&mut self) -> eyre::Result<()> {
         let listener = SekiroCoordinatesIntercept(self.coords.clone());
-        self.listener = Some(super::attach_listener_to_signature(READ_FROM_COORDS_SIG, listener)?);
+        self.listener = Some(super::attach_listener_to_signature(
+            READ_FROM_COORDS_SIG,
+            None,
+            listener,
+        )?);
 
         Ok(())
     }

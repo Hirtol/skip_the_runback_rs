@@ -8,13 +8,16 @@ use frida_gum::NativePointer;
 use once_cell::sync::Lazy;
 use rust_hooking_utils::patching::process::GameProcess;
 
+use crate::plugins::nioh2::Nioh2Plugin;
 use crate::utils::NullLock;
 
+mod ai_limit;
 mod generic;
 mod lop;
 mod macros;
 mod sekiro;
 mod wolong;
+mod nioh2;
 
 pub static GUM: Lazy<frida_gum::Gum> = Lazy::new(|| unsafe { frida_gum::Gum::obtain() });
 pub static PROBE_INTERCEPTOR: Lazy<Mutex<NullLock<frida_gum::interceptor::Interceptor>>> =
@@ -27,6 +30,8 @@ pub fn get_all_plugins(search_path: &Path) -> Vec<Box<dyn SkipPlugin>> {
     generic_skips.push(Box::new(lop::LOPPlugin::new()));
     generic_skips.push(Box::new(sekiro::SekiroPlugin::new()));
     generic_skips.push(Box::new(wolong::WoLongPlugin::new()));
+    generic_skips.push(Box::new(ai_limit::AILimitPlugin::new()));
+    generic_skips.push(Box::new(Nioh2Plugin::new()));
 
     generic_skips
 }
@@ -109,13 +114,22 @@ pub struct PluginIdentifiers {
 /// The [Unpin] bound is unfortunately necessary due to the fact that we can't pass the [Pin] directly...
 pub fn attach_listener_to_signature<T: ProbeListener + Unpin>(
     signature: &str,
+    module: Option<&str>,
     listener: T,
 ) -> eyre::Result<Pin<Box<T>>> {
-    let position_fn_ptr = GameProcess::current_process()
-        .get_base_module()?
-        .to_local()?
-        .scan_for_pattern(signature)
-        .map_err(|e| eyre::eyre!(Box::new(e)))? as usize;
+    let position_fn_ptr = if let Some(module) = module {
+        GameProcess::current_process()
+            .get_module(module)?
+            .to_local()?
+            .scan_for_pattern(signature)
+            .map_err(|e| eyre::eyre!(Box::new(e)))? as usize
+    } else {
+        GameProcess::current_process()
+            .get_base_module()?
+            .to_local()?
+            .scan_for_pattern(signature)
+            .map_err(|e| eyre::eyre!(Box::new(e)))? as usize
+    };
 
     log::info!("Found position modification ptr: {:#X}", position_fn_ptr);
 
