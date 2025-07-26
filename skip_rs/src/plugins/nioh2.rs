@@ -4,7 +4,7 @@ super::macros::simple_plugin!(
     GenericConfig {
         identifiers: PluginIdentifiers {
             plugin_name: "Nioh 2".into(),
-            expected_module: Some("nioh2.exe".into()),
+            expected_module: None,
             expected_exe_name: Some("nioh2.exe".into()),
         },
         position: GenericPositionConfig::InterceptPtr(InterceptConfig {
